@@ -1,0 +1,48 @@
+{
+  "name": "remote-image-preview",
+  "displayName": "Remote Image Preview",
+  "description": "Preview remote images on hover and in the gutter from paths with a configured CDN prefix.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "remoteImagePreview.configureCdn",
+        "title": "Configure CDN Prefix",
+        "category": "Remote Image Preview"
+      }
+    ],
+    "configuration": {
+      "title": "Remote Image Preview",
+      "properties": {
+        "remoteImagePreview.cdnPrefix": {
+          "type": "string",
+          "default": "",
+          "description": "CDN prefix to prepend to image paths (e.g. https://cdn.example.com).",
+          "scope": "resource"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "node test/regex.test.js && node test/utils.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
+  }
+}
