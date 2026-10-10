@@ -67,3 +67,35 @@ export function getCdnPrefix(resource?: vscode.Uri): string {
   const config = vscode.workspace.getConfiguration('remoteImagePreview', resource);
   return config.get<string>('cdnPrefix', '').trim();
 }
+
+export interface SupportedImageLink {
+  match: ImageMatch;
+  fullUrl: string;
+}
+
+/**
+ * Finds all supported image links in the given text and resolves their full remote URLs.
+ */
+export function findSupportedImageLinks(text: string, cdnPrefix: string): SupportedImageLink[] {
+  if (!cdnPrefix || !cdnPrefix.trim()) {
+    return [];
+  }
+  const matches = findImageMatches(text);
+  const results: SupportedImageLink[] = [];
+  for (const match of matches) {
+    const fullUrl = buildFullUrl(cdnPrefix, match.path);
+    if (fullUrl) {
+      results.push({ match, fullUrl });
+    }
+  }
+  return results;
+}
+
+/**
+ * Checks whether link underlining is enabled in VS Code settings.
+ */
+export function isUnderlineEnabled(resource?: vscode.Uri): boolean {
+  const config = vscode.workspace.getConfiguration('remoteImagePreview', resource);
+  return config.get<boolean>('underline', true);
+}
+

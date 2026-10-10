@@ -117,4 +117,59 @@ for (const tc of testCases) {
   );
 }
 
+// 3. Test findSupportedImageLinks (used for underline decorations)
+console.log('Testing findSupportedImageLinks for underline ranges...');
+
+function findSupportedImageLinks(text, cdnPrefix) {
+  if (!cdnPrefix || !cdnPrefix.trim()) {
+    return [];
+  }
+  const matches = findImageMatches(text);
+  const results = [];
+  for (const match of matches) {
+    const fullUrl = buildFullUrl(cdnPrefix, match.path);
+    if (fullUrl) {
+      results.push({ match, fullUrl });
+    }
+  }
+  return results;
+}
+
+// 3.1 When CDN is not configured, no links should be supported (no underlines)
+assert.deepStrictEqual(
+  findSupportedImageLinks('const a = "/static/logo.png";', ''),
+  []
+);
+assert.deepStrictEqual(
+  findSupportedImageLinks('const a = "/static/logo.png";', '   '),
+  []
+);
+
+// 3.2 When CDN is configured, supported links should have exact start/end for underlines
+const cdn = 'https://cdn.example.com';
+const codeLine = 'const a = "/static/img/hero.png"; const b = \'/icons/arrow.svg\';';
+const supported = findSupportedImageLinks(codeLine, cdn);
+
+assert.strictEqual(supported.length, 2);
+
+// Check first link underline range
+assert.strictEqual(supported[0].match.path, '/static/img/hero.png');
+assert.strictEqual(supported[0].fullUrl, 'https://cdn.example.com/static/img/hero.png');
+assert.strictEqual(
+  codeLine.slice(supported[0].match.start, supported[0].match.end),
+  '/static/img/hero.png'
+);
+
+// Check second link underline range
+assert.strictEqual(supported[1].match.path, '/icons/arrow.svg');
+assert.strictEqual(supported[1].fullUrl, 'https://cdn.example.com/icons/arrow.svg');
+assert.strictEqual(
+  codeLine.slice(supported[1].match.start, supported[1].match.end),
+  '/icons/arrow.svg'
+);
+
+// 3.3 Non-supported paths should yield no underline ranges
+const ignoredLine = 'const a = "./relative.png"; const b = "@/alias.png"; const c = "https://ext.com/img.png";';
+assert.deepStrictEqual(findSupportedImageLinks(ignoredLine, cdn), []);
+
 console.log('All tests passed successfully!');

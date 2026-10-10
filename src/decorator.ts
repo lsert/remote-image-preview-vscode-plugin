@@ -1,16 +1,21 @@
 import * as vscode from 'vscode';
-import { findImageMatches, buildFullUrl, getCdnPrefix } from './utils';
+import { findSupportedImageLinks, getCdnPrefix, isUnderlineEnabled } from './utils';
 
 const MAX_DECORATION_CACHE = 500;
 const LARGE_DOC_THRESHOLD = 3000;
 
 export class GutterIconDecorator {
   private decorationTypes = new Map<string, vscode.TextEditorDecorationType>();
+  private underlineDecorationType: vscode.TextEditorDecorationType;
   private editorDecorations = new WeakMap<vscode.TextEditor, Set<string>>();
   private debounceTimers = new Map<vscode.TextEditor, NodeJS.Timeout>();
   private disposables: vscode.Disposable[] = [];
 
   constructor() {
+    this.underlineDecorationType = vscode.window.createTextEditorDecorationType({
+      textDecoration: 'underline'
+    });
+
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor) {
@@ -83,6 +88,7 @@ export class GutterIconDecorator {
     }
 
     const urlToRanges = new Map<string, vscode.DecorationOptions[]>();
+    const underlineRanges: vscode.Range[] = [];
 
     if (doc.lineCount > LARGE_DOC_THRESHOLD) {
       // Scan visible ranges with a buffer for large documents
@@ -93,16 +99,20 @@ export class GutterIconDecorator {
 
         for (let lineIndex = startLine; lineIndex <= endLine; lineIndex++) {
           const line = doc.lineAt(lineIndex);
-          this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges);
+          this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges, underlineRanges);
         }
       }
     } else {
       // For standard sized documents, scan line-by-line
       for (let lineIndex = 0; lineIndex < doc.lineCount; lineIndex++) {
         const line = doc.lineAt(lineIndex);
-        this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges);
+        this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges, underlineRanges);
       }
     }
+
+    // Apply underline decorations
+    const showUnderline = isUnderlineEnabled(doc.uri);
+    editor.setDecorations(this.underlineDecorationType, showUnderline ? underlineRanges : []);
 
     // Get previously decorated URLs for this editor
     const previousUrls = this.editorDecorations.get(editor) || new Set<string>();
@@ -143,40 +153,38 @@ export class GutterIconDecorator {
     lineIndex: number,
     doc: vscode.TextDocument,
     cdnPrefix: string,
-    urlToRanges: Map<string, vscode.DecorationOptions[]>
+    urlToRanges: Map<string, vscode.DecorationOptions[]>,
+    underlineRanges: vscode.Range[]
   ) {
-    const matches = findImageMatches(lineText);
-    for (const match of matches) {
-      const fullUrl = buildFullUrl(cdnPrefix, match.path);
-      if (!fullUrl) {
-        continue;
-      }
-
-      const range = new vscode.Range(lineIndex, match.start, lineIndex, match.end);
+    const supportedLinks = findSupportedImageLinks(lineText, cdnPrefix);
+    for (const link of supportedLinks) {
+      const range = new vscode.Range(lineIndex, link.match.start, lineIndex, link.match.end);
+      underlineRanges.push(range);
 
       const hoverMessage = new vscode.MarkdownString();
       hoverMessage.isTrusted = true;
       hoverMessage.supportHtml = true;
       hoverMessage.supportThemeIcons = true;
-      hoverMessage.appendMarkdown(`![Image Preview](${fullUrl})\n\n`);
+      hoverMessage.appendMarkdown(`![Image Preview](${link.fullUrl})\n\n`);
       hoverMessage.appendMarkdown(`---\n\n`);
-      hoverMessage.appendMarkdown(`**Path:** \`${match.path}\`  \n`);
-      hoverMessage.appendMarkdown(`**URL:** [${fullUrl}](${fullUrl})  \n\n`);
-      hoverMessage.appendMarkdown(`[$(link-external) Open in Browser](${fullUrl})`);
+      hoverMessage.appendMarkdown(`**Path:** \`${link.match.path}\`  \n`);
+      hoverMessage.appendMarkdown(`**URL:** [${link.fullUrl}](${link.fullUrl})  \n\n`);
+      hoverMessage.appendMarkdown(`[$(link-external) Open in Browser](${link.fullUrl})`);
 
       const decoration: vscode.DecorationOptions = {
         range,
         hoverMessage
       };
 
-      if (!urlToRanges.has(fullUrl)) {
-        urlToRanges.set(fullUrl, []);
+      if (!urlToRanges.has(link.fullUrl)) {
+        urlToRanges.set(link.fullUrl, []);
       }
-      urlToRanges.get(fullUrl)!.push(decoration);
+      urlToRanges.get(link.fullUrl)!.push(decoration);
     }
   }
 
   private clearEditor(editor: vscode.TextEditor) {
+    editor.setDecorations(this.underlineDecorationType, []);
     const previousUrls = this.editorDecorations.get(editor);
     if (previousUrls) {
       for (const url of previousUrls) {
@@ -233,6 +241,7 @@ export class GutterIconDecorator {
     }
     this.debounceTimers.clear();
     this.clearAll();
+    this.underlineDecorationType.dispose();
     this.disposables.forEach((d) => d.dispose());
     this.disposables = [];
   }

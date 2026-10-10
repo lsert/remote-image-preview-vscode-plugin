@@ -30,6 +30,12 @@
           "default": "",
           "description": "CDN prefix to prepend to image paths (e.g. https://cdn.example.com).",
           "scope": "resource"
+        },
+        "remoteImagePreview.underline": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to underline supported image links in the editor.",
+          "scope": "resource"
         }
       }
     }
