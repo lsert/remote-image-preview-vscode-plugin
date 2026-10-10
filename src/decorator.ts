@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
-import { findSupportedImageLinks, getCdnPrefix, isUnderlineEnabled } from './utils';
+import { findSupportedImageLinks, getCdnPrefix, isUnderlineEnabled, getGutterIconSize, getSvgCurrentColor, getPathPrefix } from './utils';
+import { svgService } from './svgService';
+import { logger } from './logger';
 
 const MAX_DECORATION_CACHE = 500;
 const LARGE_DOC_THRESHOLD = 3000;
@@ -45,6 +47,7 @@ export class GutterIconDecorator {
 
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('remoteImagePreview')) {
+          svgService.clearCache();
           this.clearAll();
           for (const editor of vscode.window.visibleTextEditors) {
             this.triggerUpdate(editor);
@@ -74,7 +77,7 @@ export class GutterIconDecorator {
   }
 
   public updateEditorDecorations(editor: vscode.TextEditor) {
-    if (!editor || !editor.document) {
+    if (!editor || !editor.document || editor.document.isClosed) {
       return;
     }
 
@@ -87,7 +90,10 @@ export class GutterIconDecorator {
       return;
     }
 
-    const urlToRanges = new Map<string, vscode.DecorationOptions[]>();
+    const gutterIconSize = getGutterIconSize(doc.uri);
+    const svgColor = getSvgCurrentColor(doc.uri);
+    const pathPrefix = getPathPrefix(doc.uri);
+    const urlToRanges = new Map<string, vscode.Range[]>();
     const underlineRanges: vscode.Range[] = [];
 
     if (doc.lineCount > LARGE_DOC_THRESHOLD) {
@@ -99,14 +105,14 @@ export class GutterIconDecorator {
 
         for (let lineIndex = startLine; lineIndex <= endLine; lineIndex++) {
           const line = doc.lineAt(lineIndex);
-          this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges, underlineRanges);
+          this.processLine(line.text, lineIndex, doc, cdnPrefix, pathPrefix, urlToRanges, underlineRanges, editor, svgColor);
         }
       }
     } else {
       // For standard sized documents, scan line-by-line
       for (let lineIndex = 0; lineIndex < doc.lineCount; lineIndex++) {
         const line = doc.lineAt(lineIndex);
-        this.processLine(line.text, lineIndex, doc, cdnPrefix, urlToRanges, underlineRanges);
+        this.processLine(line.text, lineIndex, doc, cdnPrefix, pathPrefix, urlToRanges, underlineRanges, editor, svgColor);
       }
     }
 
@@ -129,14 +135,14 @@ export class GutterIconDecorator {
     }
 
     // Apply new decorations
-    for (const [url, ranges] of urlToRanges.entries()) {
-      let decType = this.decorationTypes.get(url);
+    for (const [iconPathOrUrl, ranges] of urlToRanges.entries()) {
+      let decType = this.decorationTypes.get(iconPathOrUrl);
       if (!decType) {
         decType = vscode.window.createTextEditorDecorationType({
-          gutterIconPath: vscode.Uri.parse(url),
-          gutterIconSize: 'contain'
+          gutterIconPath: vscode.Uri.parse(iconPathOrUrl),
+          gutterIconSize: gutterIconSize
         });
-        this.decorationTypes.set(url, decType);
+        this.decorationTypes.set(iconPathOrUrl, decType);
       }
       editor.setDecorations(decType, ranges);
     }
@@ -153,33 +159,42 @@ export class GutterIconDecorator {
     lineIndex: number,
     doc: vscode.TextDocument,
     cdnPrefix: string,
-    urlToRanges: Map<string, vscode.DecorationOptions[]>,
-    underlineRanges: vscode.Range[]
+    pathPrefix: string,
+    urlToRanges: Map<string, vscode.Range[]>,
+    underlineRanges: vscode.Range[],
+    editor: vscode.TextEditor,
+    svgColor: string
   ) {
-    const supportedLinks = findSupportedImageLinks(lineText, cdnPrefix);
+    const supportedLinks = findSupportedImageLinks(lineText, cdnPrefix, pathPrefix);
     for (const link of supportedLinks) {
       const range = new vscode.Range(lineIndex, link.match.start, lineIndex, link.match.end);
       underlineRanges.push(range);
 
-      const hoverMessage = new vscode.MarkdownString();
-      hoverMessage.isTrusted = true;
-      hoverMessage.supportHtml = true;
-      hoverMessage.supportThemeIcons = true;
-      hoverMessage.appendMarkdown(`![Image Preview](${link.fullUrl})\n\n`);
-      hoverMessage.appendMarkdown(`---\n\n`);
-      hoverMessage.appendMarkdown(`**Path:** \`${link.match.path}\`  \n`);
-      hoverMessage.appendMarkdown(`**URL:** [${link.fullUrl}](${link.fullUrl})  \n\n`);
-      hoverMessage.appendMarkdown(`[$(link-external) Open in Browser](${link.fullUrl})`);
-
-      const decoration: vscode.DecorationOptions = {
-        range,
-        hoverMessage
-      };
-
-      if (!urlToRanges.has(link.fullUrl)) {
-        urlToRanges.set(link.fullUrl, []);
+      const isSvg = /\.svg$/i.test(link.match.path);
+      if (isSvg) {
+        if (svgService.has(link.match.path, svgColor)) {
+          const dataUri = svgService.get(link.match.path, svgColor)!;
+          if (!urlToRanges.has(dataUri)) {
+            urlToRanges.set(dataUri, []);
+          }
+          urlToRanges.get(dataUri)!.push(range);
+        } else {
+          // Asynchronously fetch SVG; once cached, triggerUpdate will apply the gutter decoration
+          svgService
+            .getOrFetch(link.fullUrl, link.match.path, undefined, svgColor)
+            .then(() => {
+              this.triggerUpdate(editor);
+            })
+            .catch((err) => {
+              logger.error(`Failed to fetch SVG for gutter [${link.match.path}]: ${err}`);
+            });
+        }
+      } else {
+        if (!urlToRanges.has(link.fullUrl)) {
+          urlToRanges.set(link.fullUrl, []);
+        }
+        urlToRanges.get(link.fullUrl)!.push(range);
       }
-      urlToRanges.get(link.fullUrl)!.push(decoration);
     }
   }
 

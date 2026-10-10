@@ -1,15 +1,29 @@
 const assert = require('assert');
 
-// Test the logic directly
-const IMAGE_PATH_REGEX =
-  /(?:^|[\s"'`()\[\]{}<>,;=:])(\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.(?:png|jpg|jpeg|svg|gif|webp|ico|bmp|avif))(?=[\s"'`()\[\]{}<>,;=?#]|$)/gi;
+const IMAGE_EXTENSIONS = 'png|jpg|jpeg|svg|gif|webp|ico|bmp|avif';
 
-function findImageMatches(text) {
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const START_DELIMITER = "(?:^|[\\s\"'`()\\[\\]{}<>,;=:])";
+const END_DELIMITER = "(?=[\\s\"'`()\\[\\]{}<>,;=?#]|$)";
+
+function createImagePathRegex(pathPrefix = '/') {
+  const prefix = pathPrefix.trim() || '/';
+  const escaped = escapeRegex(prefix);
+  return new RegExp(
+    `${START_DELIMITER}(${escaped}(?:[a-zA-Z0-9_.-]+\\/)*[a-zA-Z0-9_.-]+\\.(?:${IMAGE_EXTENSIONS}))${END_DELIMITER}`,
+    'gi'
+  );
+}
+
+function findImageMatches(text, pathPrefix = '/') {
   const matches = [];
+  const regex = createImagePathRegex(pathPrefix);
   let match;
-  IMAGE_PATH_REGEX.lastIndex = 0;
 
-  while ((match = IMAGE_PATH_REGEX.exec(text)) !== null) {
+  while ((match = regex.exec(text)) !== null) {
     const fullMatch = match[0];
     const imagePath = match[1];
     const pathOffset = match.index + fullMatch.indexOf(imagePath);
@@ -73,8 +87,8 @@ assert.strictEqual(
 assert.strictEqual(buildFullUrl('', '/logo.svg'), null);
 assert.strictEqual(buildFullUrl('   ', '/logo.svg'), null);
 
-// 2. Test findImageMatches in various contexts
-console.log('Testing findImageMatches...');
+// 2. Test findImageMatches with default pathPrefix '/'
+console.log('Testing findImageMatches with default pathPrefix...');
 
 const testCases = [
   {
@@ -95,7 +109,7 @@ const testCases = [
   },
   {
     input: 'import { foo } from "@/components/test.png";',
-    expected: [] // should NOT match alias with @
+    expected: [] // should NOT match alias with @ when pathPrefix is '/'
   },
   {
     input: 'const path = "./relative/image.png";',
@@ -117,14 +131,40 @@ for (const tc of testCases) {
   );
 }
 
+// 2.1 Test findImageMatches with custom pathPrefix
+console.log('Testing findImageMatches with custom pathPrefix...');
+
+const customPrefixCases = [
+  {
+    input: 'const a = "/static/img/hero.png"; const b = "/other/pic.png";',
+    prefix: '/static/',
+    expected: ['/static/img/hero.png']
+  },
+  {
+    input: 'const a = "@/assets/logo.svg"; const b = "/static/logo.svg";',
+    prefix: '@/',
+    expected: ['@/assets/logo.svg']
+  }
+];
+
+for (const tc of customPrefixCases) {
+  const matches = findImageMatches(tc.input, tc.prefix);
+  const paths = matches.map((m) => m.path);
+  assert.deepStrictEqual(
+    paths,
+    tc.expected,
+    `Failed for custom prefix ${tc.prefix} on input: ${tc.input}`
+  );
+}
+
 // 3. Test findSupportedImageLinks (used for underline decorations)
 console.log('Testing findSupportedImageLinks for underline ranges...');
 
-function findSupportedImageLinks(text, cdnPrefix) {
+function findSupportedImageLinks(text, cdnPrefix, pathPrefix = '/') {
   if (!cdnPrefix || !cdnPrefix.trim()) {
     return [];
   }
-  const matches = findImageMatches(text);
+  const matches = findImageMatches(text, pathPrefix);
   const results = [];
   for (const match of matches) {
     const fullUrl = buildFullUrl(cdnPrefix, match.path);
@@ -168,8 +208,13 @@ assert.strictEqual(
   '/icons/arrow.svg'
 );
 
-// 3.3 Non-supported paths should yield no underline ranges
-const ignoredLine = 'const a = "./relative.png"; const b = "@/alias.png"; const c = "https://ext.com/img.png";';
-assert.deepStrictEqual(findSupportedImageLinks(ignoredLine, cdn), []);
+// 3.3 Custom pathPrefix in findSupportedImageLinks
+const customSupported = findSupportedImageLinks(
+  'const a = "/static/img/hero.png"; const b = "/other/pic.png";',
+  cdn,
+  '/static/'
+);
+assert.strictEqual(customSupported.length, 1);
+assert.strictEqual(customSupported[0].match.path, '/static/img/hero.png');
 
 console.log('All tests passed successfully!');

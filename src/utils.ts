@@ -1,4 +1,5 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
+import { logger } from "./logger";
 
 export interface ImageMatch {
   path: string;
@@ -6,20 +7,45 @@ export interface ImageMatch {
   end: number;
 }
 
-// Regex to match absolute paths ending with common image extensions.
-// Ensures the path starts with a single slash '/' and is preceded by whitespace, quotes, or punctuation.
-export const IMAGE_PATH_REGEX =
-  /(?:^|[\s"'`()\[\]{}<>,;=:])(\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.(?:png|jpg|jpeg|svg|gif|webp|ico|bmp|avif))(?=[\s"'`()\[\]{}<>,;=?#]|$)/gi;
+export const IMAGE_EXTENSIONS =
+  "png|jpg|jpeg|svg|gif|webp|ico|bmp|avif";
+
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const START_DELIMITER = "(?:^|[\\s\"'`()\\[\\]{}<>,;=:])";
+const END_DELIMITER = "(?=[\\s\"'`()\\[\\]{}<>,;=?#]|$)";
 
 /**
- * Finds all image paths in the given text.
+ * Creates a regex to match image paths starting with the specified path prefix (default: '/').
+ * Ensures the path is preceded by whitespace, quotes, or punctuation.
  */
-export function findImageMatches(text: string): ImageMatch[] {
-  const matches: ImageMatch[] = [];
-  let match: RegExpExecArray | null;
-  IMAGE_PATH_REGEX.lastIndex = 0;
+export function createImagePathRegex(pathPrefix: string = "/"): RegExp {
+  const prefix = pathPrefix.trim() || "/";
+  const escaped = escapeRegex(prefix);
+  return new RegExp(
+    `${START_DELIMITER}(${escaped}(?:[a-zA-Z0-9_.-]+\\/)*[a-zA-Z0-9_.-]+\\.(?:${IMAGE_EXTENSIONS}))${END_DELIMITER}`,
+    "gi",
+  );
+}
 
-  while ((match = IMAGE_PATH_REGEX.exec(text)) !== null) {
+// Default regex to match absolute paths starting with '/'
+export const IMAGE_PATH_REGEX = createImagePathRegex("/");
+
+/**
+ * Finds all image paths in the given text matching the configured pathPrefix.
+ */
+export function findImageMatches(
+  text: string,
+  pathPrefix: string = "/",
+): ImageMatch[] {
+  const matches: ImageMatch[] = [];
+  const regex = createImagePathRegex(pathPrefix);
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    logger.info(`Finding image matches in text: ${text}`);
     const fullMatch = match[0];
     const imagePath = match[1];
     const pathOffset = match.index + fullMatch.indexOf(imagePath);
@@ -27,7 +53,7 @@ export function findImageMatches(text: string): ImageMatch[] {
     matches.push({
       path: imagePath,
       start: pathOffset,
-      end: pathOffset + imagePath.length
+      end: pathOffset + imagePath.length,
     });
   }
 
@@ -38,24 +64,27 @@ export function findImageMatches(text: string): ImageMatch[] {
  * Combines the CDN prefix with the matched image path.
  * Formats the prefix to ensure proper protocol and avoid duplicate slashes.
  */
-export function buildFullUrl(cdnPrefix: string, imagePath: string): string | null {
+export function buildFullUrl(
+  cdnPrefix: string,
+  imagePath: string,
+): string | null {
   let prefix = cdnPrefix.trim();
   if (!prefix) {
     return null;
   }
 
   // Prepend https:// if protocol is omitted
-  if (prefix.startsWith('//')) {
+  if (prefix.startsWith("//")) {
     prefix = `https:${prefix}`;
   } else if (!/^https?:\/\//i.test(prefix)) {
     prefix = `https://${prefix}`;
   }
 
   // Remove trailing slashes from prefix
-  prefix = prefix.replace(/\/+$/, '');
+  prefix = prefix.replace(/\/+$/, "");
 
   // Ensure path starts with a single slash
-  const cleanPath = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+  const cleanPath = imagePath.startsWith("/") ? imagePath : `/${imagePath}`;
 
   return `${prefix}${cleanPath}`;
 }
@@ -64,8 +93,22 @@ export function buildFullUrl(cdnPrefix: string, imagePath: string): string | nul
  * Retrieves the CDN prefix from VS Code settings.
  */
 export function getCdnPrefix(resource?: vscode.Uri): string {
-  const config = vscode.workspace.getConfiguration('remoteImagePreview', resource);
-  return config.get<string>('cdnPrefix', '').trim();
+  const config = vscode.workspace.getConfiguration(
+    "remoteImagePreview",
+    resource,
+  );
+  return config.get<string>("cdnPrefix", "").trim();
+}
+
+/**
+ * Retrieves the path prefix from VS Code settings (default: '/').
+ */
+export function getPathPrefix(resource?: vscode.Uri): string {
+  const config = vscode.workspace.getConfiguration(
+    "remoteImagePreview",
+    resource,
+  );
+  return config.get<string>("pathPrefix", "/").trim() || "/";
 }
 
 export interface SupportedImageLink {
@@ -76,11 +119,15 @@ export interface SupportedImageLink {
 /**
  * Finds all supported image links in the given text and resolves their full remote URLs.
  */
-export function findSupportedImageLinks(text: string, cdnPrefix: string): SupportedImageLink[] {
+export function findSupportedImageLinks(
+  text: string,
+  cdnPrefix: string,
+  pathPrefix: string = "/",
+): SupportedImageLink[] {
   if (!cdnPrefix || !cdnPrefix.trim()) {
     return [];
   }
-  const matches = findImageMatches(text);
+  const matches = findImageMatches(text, pathPrefix);
   const results: SupportedImageLink[] = [];
   for (const match of matches) {
     const fullUrl = buildFullUrl(cdnPrefix, match.path);
@@ -95,7 +142,31 @@ export function findSupportedImageLinks(text: string, cdnPrefix: string): Suppor
  * Checks whether link underlining is enabled in VS Code settings.
  */
 export function isUnderlineEnabled(resource?: vscode.Uri): boolean {
-  const config = vscode.workspace.getConfiguration('remoteImagePreview', resource);
-  return config.get<boolean>('underline', true);
+  const config = vscode.workspace.getConfiguration(
+    "remoteImagePreview",
+    resource,
+  );
+  return config.get<boolean>("underline", true);
 }
 
+/**
+ * Retrieves the gutter icon size from VS Code settings (default: 'cover').
+ */
+export function getGutterIconSize(resource?: vscode.Uri): string {
+  const config = vscode.workspace.getConfiguration(
+    "remoteImagePreview",
+    resource,
+  );
+  return config.get<string>("gutterIconSize", "cover").trim() || "cover";
+}
+
+/**
+ * Retrieves the SVG currentColor replacement from VS Code settings (default: '#ffffff').
+ */
+export function getSvgCurrentColor(resource?: vscode.Uri): string {
+  const config = vscode.workspace.getConfiguration(
+    "remoteImagePreview",
+    resource,
+  );
+  return config.get<string>("svgCurrentColor", "#ffffff").trim() || "#ffffff";
+}

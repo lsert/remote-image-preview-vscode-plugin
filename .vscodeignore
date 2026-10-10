@@ -2,7 +2,8 @@
 .vscode-test/**
 src/**
 test/**
+test-sample.js
+**/*.map
 tsconfig.json
 .gitignore
-README.md
 vsc-extension-quickstart.md

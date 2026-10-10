@@ -1,19 +1,37 @@
 {
   "name": "remote-image-preview",
   "displayName": "Remote Image Preview",
-  "description": "Preview remote images on hover and in the gutter from paths with a configured CDN prefix.",
+  "description": "Preview remote and CDN images on hover and in the editor gutter, with full SVG theme-color adaptation.",
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "lvsflat",
+  "author": "lvsflat<lvsflat@gmail.com>",
+  "license": "MIT",
+  "icon": "icon.png",
+  "keywords": [
+    "image preview",
+    "remote image",
+    "cdn",
+    "svg preview",
+    "gutter preview",
+    "hover preview",
+    "image",
+    "svg"
+  ],
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/lsert/remote-image-preview-vscode-plugin.git"
   },
+  "bugs": {
+    "url": "https://github.com/lsert/remote-image-preview-vscode-plugin/issues"
+  },
+  "homepage": "https://github.com/lsert/remote-image-preview-vscode-plugin#readme",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -35,10 +53,35 @@
           "description": "CDN prefix to prepend to image paths (e.g. https://cdn.example.com).",
           "scope": "resource"
         },
+        "remoteImagePreview.pathPrefix": {
+          "type": "string",
+          "default": "/",
+          "description": "Path prefix for matching image paths in code (e.g. '/' or '/static/'). Defaults to '/'.",
+          "scope": "resource"
+        },
         "remoteImagePreview.underline": {
           "type": "boolean",
           "default": true,
           "description": "Whether to underline supported image links in the editor.",
+          "scope": "resource"
+        },
+        "remoteImagePreview.gutterIconSize": {
+          "type": "string",
+          "default": "cover",
+          "enum": [
+            "cover",
+            "contain",
+            "100%",
+            "120%",
+            "auto"
+          ],
+          "description": "Size of the gutter icon preview. Default is 'cover' to enlarge and fill the gutter line height.",
+          "scope": "resource"
+        },
+        "remoteImagePreview.svgCurrentColor": {
+          "type": "string",
+          "default": "#ffffff",
+          "description": "Color to replace 'currentColor' with in SVG preview images (defaults to '#ffffff').",
           "scope": "resource"
         }
       }
@@ -48,8 +91,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node test/regex.test.js && node test/utils.test.js",
-    "package": "vsce package --no-dependencies --skip-license"
+    "test": "node test/regex.test.js && node test/utils.test.js && node test/logger.test.js && node test/svg-preview.test.js",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
