@@ -70,3 +70,9 @@ background: url(/bg/dark.webp);
    - 在 VS Code 中打开本项目。
    - 按 `F5` 键启动 **Extension Development Host**。
    - 在弹出的新窗口中配置 CDN 前缀并打开任意代码文件进行测试。
+
+4. 打包插件文件 (.vsix)：
+   ```bash
+   npm run package
+   ```
+   打包完成后会在项目根目录生成 `remote-image-preview-0.0.1.vsix` 文件，可在 VS Code 中直接安装使用。

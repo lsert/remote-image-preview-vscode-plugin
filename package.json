@@ -10,6 +10,10 @@
   "categories": [
     "Other"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lsert/remote-image-preview-vscode-plugin.git"
+  },
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -44,11 +48,13 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "node test/regex.test.js && node test/utils.test.js"
+    "test": "node test/regex.test.js && node test/utils.test.js",
+    "package": "vsce package --no-dependencies --skip-license"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^4.0.0",
     "typescript": "^5.3.3"
   }
 }
